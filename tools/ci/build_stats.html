@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>AREN22 builds</title>
+
+<style>
+/* color scheme from Bootstrap v5 */
+body {
+    font-family: "Segoe UI", "Roboto", sans-serif;
+}
+body, td {
+    font-size: 14px;
+}
+a, a:hover, a:visited, a:active {
+    color: #0d6efd;
+    text-decoration: none;
+}
+a:hover {
+    color: #0a58ca;
+}
+
+/* border-color derived from text-muted color: https://meyerweb.com/eric/tools/color-blend/#6C757D:FFFFFF:4:rgbd */
+table.builds {
+    border-spacing: 0;
+    border-collapse: collapse;
+}
+table.builds>thead>tr>th {
+    font-weight: 600;
+    padding: 0.25em 1em 0.25em 1em;
+    border-bottom: 2px solid rgb(226,227,229);
+    text-align: left;
+}
+table.builds>tbody>tr>td {
+    padding: 0.25em 1em 0.25em 1em;
+    text-align: right;
+}
+
+table.builds>tbody>tr>td {
+    border-top: 1px solid rgb(226,227,229);
+}
+/* bottom border at end of table */
+table.device-detail>tbody>tr:last-child>td {
+    border-bottom: 1px solid rgb(226,227,229);
+}
+td.error { background-color: rgb(220, 53, 69); color: #fff; font-weight: 600 }
+td.success { background-color: rgb(25, 135, 84); color: #fff; font-weight: 600 }
+</style>
+
+  <link rel="icon" type="image/png" href="favicon.png" />
+</head>
+
+<body>
+
+<table class="builds">
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Timestamp</th>
+      <th>Commit</th>
+      <th>ROM size</th>
+      <th>Performance</th>
+      <th>Memory usage</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% set CPU_FREQ = 16*1024*1024 %}
+    {% for build in builds %}
+    <tr>
+      <td>{{ build.id }}</td>
+      <td><a href="{{ build.pipeline_url }}">{{ build.pipeline_timestamp }}</a></td>
+      <td style="text-align: left">
+        <p><a href="{{ project_url }}/-/commit/{{ build.commit_sha1 }}">{{ build.branch }} &RightArrow; {{ build.commit_sha1[:8] }}</a></p>
+        <p>{{ (build.commit_title | default(""))[:50] }}</p>
+      </td>
+
+      <td>{{ build.rom_size }}</td>
+
+      <td>
+        {% if build.benchmarks %}
+        <table>     {# would be better to spill this into the parent table, but not so simple to generate that #}
+          {% for scenario in build.benchmarks %}
+          <tr>
+            <td style="font-family: monospace; text-align: left; padding-right: 1em">{{ scenario.scenario }}</td>
+            <td style="padding-right: 1em">{{ "%d" | format(scenario.cycles) }} cycles</td>
+            <td style="padding-right: 1em">{{ "%.2f" | format(scenario.cycles / CPU_FREQ * 1000) }} msec</td>
+            <td>{{ "%.1f" | format(CPU_FREQ / scenario.cycles) }} FPS</td>
+          </tr>
+          {% endfor %}
+        </table>
+        {% endif %}
+
+        {# OLDEST BUILDS #}
+        {% if build.benchmark and 'usec' in build.benchmark %}
+        <table>
+          <td style="font-family: monospace; text-align: left; padding-right: 1em">test1</td>
+          <td style="padding-right: 1em">{{ "%d" | format(build.benchmark.cycles) }} cycles</td>
+          <td style="padding-right: 1em">{{ "%.2f" | format(build.benchmark.cycles / CPU_FREQ * 1000) }} msec</td>
+          <td>{{ "%.1f" | format(CPU_FREQ / build.benchmark.cycles) }} FPS</td>
+        </table>
+        {% endif %}
+      </td>
+
+      <td>
+        {% if build.elf_size %}
+        {% set s = build.elf_size %}
+        <table>
+          <tr>
+            <td>EWRAM</td>
+            <td>
+              <abbr title="{{ s['.ewram'] }} .ewram + {{ s['.sbss'] }} .sbss">{{ "%.1f" | format((s[".ewram"] + s[".sbss"]) / 1024) }} KiB</abbr>
+            </td>
+          </tr>
+          <tr>
+            <td>IWRAM</td>
+            <td>
+              <abbr title="{{ s['.iwram'] }} .iwram + {{ s['.bss'] }} .bss">{{ "%.1f" | format((s[".iwram"] + s[".bss"]) / 1024) }} KiB</abbr>
+            </td>
+          </tr>
+        </table>
+        {% endif %}
+      </td>
+
+      {#
+      <td>{{ build }}</td>
+      #}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+</body>
+</html>

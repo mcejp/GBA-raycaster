@@ -1,0 +1,127 @@
+stages:
+  - build
+  - test
+  - upload
+
+
+build:
+  stage: build
+  image: devkitpro/devkitarm:20230928
+
+  variables:
+    DEBIAN_FRONTEND: noninteractive
+    DEVKITARM: /opt/devkitpro/devkitARM
+
+  script:
+    - cat /etc/os-release
+    - cmake --version
+    - python3 --version
+    - /opt/devkitpro/devkitARM/bin/arm-none-eabi-gcc --version
+    - /opt/devkitpro/devkitARM/bin/arm-none-eabi-g++ --version
+
+    # Install Python libs from distro repository because it's much faster than installing pip
+    #  + we don't have to pin versions since they are quite stable during the lifetime of the distro
+    - apt-get update
+    - apt-get install -y python3-numpy python3-pil
+
+    - mkdir gba-toolchain
+    - cd gba-toolchain
+    - git init
+    - git remote add origin https://github.com/felixjones/gba-toolchain.git
+    - git fetch --depth 1 origin 3e6341939b80f7e138b1f87645a549762e258961
+    - git checkout FETCH_HEAD
+    - cd ..
+
+    - mkdir cmake-build-release
+    - cd cmake-build-release
+    - cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../gba-toolchain/arm-gba-toolchain.cmake -DUSE_DEVKITARM=ON ..
+    - make -j4
+    - /opt/devkitpro/devkitARM/bin/arm-none-eabi-size -A helloTonc.elf >helloTonc.size
+
+  artifacts:
+    paths:
+      - cmake-build-release/helloTonc.elf
+      - cmake-build-release/helloTonc.gba
+      - cmake-build-release/helloTonc.size
+
+
+test:
+  stage: test
+  image: ubuntu:22.04         # could probably use mGBA's own images
+  needs: [build]
+
+  script:
+    - ls -l cmake-build-release
+
+    - apt-get update && apt-get install -y cmake gcc git g++ ninja-build
+    - cmake --version
+    - gcc --version
+    - g++ --version
+
+    # build mgba-rom-test from source
+    - git clone --depth 1 --branch 0.10.2 https://github.com/mgba-emu/mgba.git mgba-src
+    - cd mgba-src
+    - ls -l
+    - mkdir build
+    - cd build
+    - |
+      cmake \
+      -DBUILD_QT=OFF \
+      -DBUILD_ROM_TEST=ON \
+      -DBUILD_SDL=OFF \
+      -DUSE_EDITLINE=OFF \
+      -DUSE_ELF=OFF \
+      -DUSE_EPOXY=OFF \
+      -DUSE_FFMPEG=OFF \
+      -DUSE_LIBZIP=OFF \
+      -DUSE_MINIZIP=OFF \
+      -DUSE_PNG=OFF \
+      -DUSE_SQLITE3=OFF \
+      -DUSE_ZLIB=OFF \
+      -G Ninja ..
+    - ninja mgba-rom-test
+    - cd ../..
+
+    - export PATH=`pwd`/mgba-src/build/test:$PATH
+    - ./benchmark.sh | tee benchmark-stdout.txt
+    - stat --format="%s" cmake-build-release/helloTonc.gba | tee rom-size.txt
+    - cp cmake-build-release/helloTonc.size elf-size.txt
+
+  artifacts:
+    paths:
+      - benchmark-stdout.txt
+      - rom-size.txt
+      - elf-size.txt
+    when: always
+
+
+reports:
+  stage: upload
+  needs:
+    - job: test
+      artifacts: true
+  when: always
+
+  image: python:3.10
+
+  script:
+    - pip install junitparser "psycopg>=3"
+    - ./tools/ci/save_build_stats.py
+
+
+pages:
+  stage: upload
+  needs: [reports]
+
+  image: python:3.10
+
+  script:
+    - mkdir public
+    - cd public
+    - pip install Jinja2 "psycopg>=3"
+    - ../tools/ci/present_build_stats.py
+    - cp ../tools/ci/favicon.png ./
+
+  artifacts:
+    paths:
+      - public
